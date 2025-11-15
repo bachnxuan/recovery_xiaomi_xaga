@@ -1,0 +1,61 @@
+name: Make TWRP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Cleanup
+      uses: rokibhasansagar/slimhub_actions@main
+      
+    - name: Maximize build space
+      uses: easimon/maximize-build-space@master
+
+    - name: Set Variables
+      run: echo "{name}=date::$(date +%F)" >> $GITHUB_OUTPUT
+
+    - name: Prepare Environment
+      run: |
+        df -h
+        export HOME=${GITHUB_WORKSPACE}
+        cd ${GITHUB_WORKSPACE}
+        sudo apt -y install git aria2 
+        git clone https://gitlab.com/OrangeFox/misc/scripts
+        cd scripts
+        sudo bash setup/android_build_env.sh
+        sudo bash setup/install_android_sdk.sh || true
+
+    - name: Init Repo
+      run: |
+        mkdir ${GITHUB_WORKSPACE}/workspace
+        cd ${GITHUB_WORKSPACE}/workspace
+        git config --global user.name "bachnxuan"
+        git config --global user.email "bachnxuan@gmail.com"
+        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-14.1
+
+    - name: Repo Sync
+      run: |
+        cd ${GITHUB_WORKSPACE}/workspace
+        repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune --force-sync -j$(nproc --all)
+        ls -al
+
+    - name: Clone Device Tree
+      run: |
+        cd ${GITHUB_WORKSPACE}/workspace
+        git clone https://github.com/bachnxuan/recovery_xiaomi_xaga.git -b main ./device/xiaomi/xaga
+
+    - name: Building
+      run: |
+        cd ${GITHUB_WORKSPACE}/workspace
+        source build/envsetup.sh
+        lunch twrp_xaga-eng
+        mka vendorbootimage -j$(nproc --all)
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: xaga_twrp-13
+        path: workspace/out/target/product/xaga/vendor_boot.img
